@@ -1,0 +1,23 @@
+{
+  "name": "supremacia-1942",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Supremacia 1942 — jogo de grande estratégia da Segunda Guerra, com servidor autoritativo.",
+  "scripts": {
+    "start": "node server/index.mjs",
+    "dev": "node --watch server/index.mjs",
+    "test": "node --test",
+    "test:motor": "node --test tests/motor.test.mjs",
+    "test:cliente": "node --test tests/cliente.test.mjs",
+    "test:multiplayer": "node --test tests/multiplayer.test.mjs",
+    "equilibrio": "node tools/equilibrio.mjs",
+    "previa": "node tools/previa-mapa.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "jsdom": "^30.1.3"
+  }
+}

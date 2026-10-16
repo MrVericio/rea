@@ -1,0 +1,13 @@
+# Dependências (instale com: npm install)
+node_modules/
+
+# Arquivos temporários de sistemas operacionais e editores
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Logs
+npm-debug.log*
+*.log
