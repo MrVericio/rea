@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Supremacia 1942 — Teatro Europeu</title>
+<link rel="stylesheet" href="/estilo.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%230c1114'/><path d='M16 6l8 5v10l-8 5-8-5V11z' fill='none' stroke='%23c9a227' stroke-width='2'/></svg>">
+</head>
+<body>
+
+<div id="aplicacao">
+
+  <!-- ══════════════ BARRA SUPERIOR ══════════════ -->
+  <header id="topo">
+    <div class="marca">
+      <svg class="emblema" viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M16 3l10 6v12l-10 6-10-6V9z" fill="none" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M16 9l5 3v6l-5 3-5-3v-6z" fill="currentColor" opacity=".55"/>
+      </svg>
+      <div class="titulo">
+        <h1>SUPREMACIA <span>1942</span></h1>
+        <p>Teatro Europeu &amp; Mediterrâneo</p>
+      </div>
+    </div>
+
+    <div class="relogio">
+      <span class="rotulo">DIA</span>
+      <span id="dia" class="valor">1</span>
+      <span class="rotulo" id="dataHistorica"></span>
+    </div>
+
+    <div id="controlesDeTempo" class="controles" role="group" aria-label="Velocidade do jogo">
+      <button data-velocidade="0" title="Pausar (Espaço)">❙❙</button>
+      <button data-velocidade="1" class="ativo" title="Normal">1×</button>
+      <button data-velocidade="2" title="Rápido">2×</button>
+      <button data-velocidade="4" title="Muito rápido">4×</button>
+      <button id="passoDia" title="Avançar um único dia">+1 dia</button>
+    </div>
+
+    <button id="abrirAjuda" class="botaoAjuda" title="Como jogar (H)">?</button>
+
+    <div class="identidade">
+      <span id="indicador" class="farol" title="Conexão com o servidor"></span>
+      <div class="minhaNacao">
+        <span id="bolhaCor" class="bolha"></span>
+        <div>
+          <strong id="nomeDaMinhaNacao">— sem comando —</strong>
+          <small id="resumoDaNacao"></small>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ══════════════ CORPO ══════════════ -->
+  <main id="corpo">
+
+    <!-- ─── COLUNA ESQUERDA ─── -->
+    <aside id="esquerda">
+      <section class="cartao">
+        <h2>Equilíbrio de Forças</h2>
+        <div id="placar" class="placar"></div>
+      </section>
+
+      <section class="cartao cresce">
+        <h2>Comunicados do Fronte</h2>
+        <div id="comunicados" class="comunicados">
+          <p class="vazio">Sem comunicados ainda.</p>
+        </div>
+      </section>
+    </aside>
+
+    <!-- ─── MAPA ─── -->
+    <section id="areaDoMapa">
+      <canvas id="mapa"></canvas>
+
+      <div id="ferramentasDoMapa" class="ferramentas">
+        <button id="aproximar" title="Aproximar">+</button>
+        <button id="afastar" title="Afastar">−</button>
+        <button id="centralizar" title="Centralizar no meu território">◎</button>
+        <button id="alternarRotulos" title="Mostrar/ocultar nomes das províncias">Aa</button>
+      </div>
+
+      <div id="dicaDoMapa" class="dica"></div>
+      <div id="avisoDeDestino" class="aviso"></div>
+      <div id="legenda" class="legenda"></div>
+    </section>
+
+    <!-- ─── COLUNA DIREITA ─── -->
+    <aside id="direita">
+      <nav class="abas" role="tablist">
+        <button data-aba="provincia" class="ativo">Província</button>
+        <button data-aba="nacao">Nação</button>
+        <button data-aba="guerra">Guerra <em id="contadorDeBatalhas"></em></button>
+      </nav>
+
+      <div id="painelProvincia" class="painel ativo"></div>
+      <div id="painelNacao" class="painel"></div>
+      <div id="painelGuerra" class="painel"></div>
+    </aside>
+  </main>
+
+  <!-- ══════════════ BARRA DE RECURSOS ══════════════ -->
+  <footer id="recursos"></footer>
+
+  <!-- ══════════════ MODAIS ══════════════ -->
+  <div id="modal" class="modal escondido">
+    <div class="caixa">
+      <div id="conteudoDoModal"></div>
+    </div>
+  </div>
+
+  <div id="brinde" class="brinde escondido"></div>
+</div>
+
+<script type="module" src="/jogo.js"></script>
+</body>
+</html>
