@@ -32,7 +32,7 @@ function conectar() {
     tentativasDeReconexao = 0;
     indicador.classList.add("ligado");
     indicador.title = "Conectado ao servidor";
-    enviar({ tipo: "entrar", jogadorId });
+    enviar({ tipo: "entrar", jogadorId, nome: localStorage.getItem("supremacia1942:nome") ?? "" });
   });
 
   socket.addEventListener("message", (evento) => {
@@ -105,6 +105,14 @@ function tratarMensagem(mensagem) {
     case "nacaoEscolhida":
       fecharModal();
       brindar(`Você assumiu o comando da ${mensagem.nome}.`);
+      break;
+
+    case "campanhaReiniciada":
+      fimDeJogoMostrado = false;
+      jaEnquadrou = false;
+      provinciaSelecionada = null;
+      precisaEscolher = true;
+      brindar(`Campanha ${mensagem.campanha} começou: mundo novo, todas as nações de volta ao mapa.`);
       break;
   }
 }
@@ -313,6 +321,7 @@ let tiposDeMovimento = {};      // selecao atual de tipos no painel
 let quantidadesParaRecrutar = {}; // memoria dos campos de recrutamento
 let abaAtiva = "provincia";
 let fimDeJogoMostrado = false;
+let precisaEscolher = false; // a campanha reiniciou: é hora de escolher de novo
 
 function sairDoModoDeMovimento() {
   modoDeMovimento = null;
@@ -1079,6 +1088,14 @@ function trocarAba(aba) {
   for (const painel of document.querySelectorAll(".painel")) painel.classList.remove("ativo");
   const alvo = { provincia: "painelProvincia", nacao: "painelNacao", guerra: "painelGuerra" }[aba];
   $(alvo).classList.add("ativo");
+
+  // O painel recém-aberto é pintado na hora, com o retrato mais recente. Sem
+  // isto ele só apareceria atualizado no próximo envio do servidor — que pode
+  // demorar (ou nunca chegar, se a partida estiver pausada).
+  if (estado === null) return;
+  if (aba === "provincia") pintarPainelDeProvincia();
+  else if (aba === "nacao") pintarPainelDaNacao();
+  else pintarPainelDeGuerra();
 }
 
 for (const botao of document.querySelectorAll(".abas button")) {
@@ -1420,30 +1437,138 @@ function pintarPainelDaNacao() {
   </div>`;
 
   html += `<div class="bloco"><h3>Diplomacia</h3>`;
-  for (const outra of [...estado.nacoes].sort((a, b) => b.provincias - a.provincias)) {
-    if (outra.id === minha.id) continue;
+  for (const outra of [...estado.nacoes].sort((a, b) => (b.relacoes ?? 0) - (a.relacoes ?? 0))) {
+    if (outra.id === minha.id || outra.eliminada) continue;
     const emGuerra = minha.emGuerraCom.includes(outra.id);
     const custo = estado.regras.custoDeGuerra;
-    const podeDeclarar = (minha.estoques?.dinheiro ?? 0) >= custo;
-    // O servidor já disse se há como alcançar esta nação (fronteira ou rota
-    // marítima). Declarar guerra sem contato é permitido, mas não leva a nada —
-    // então o cliente avisa.
+    const dinheiro = minha.estoques?.dinheiro ?? 0;
+    const relacoes = outra.relacoes ?? 0;
+    const pacto = outra.pacto;
     const alcancavel = outra.alcancavel !== false;
+    const corDasRelacoes = relacoes >= 40 ? "var(--verde)" : relacoes <= -30 ? "var(--vermelho)" : "var(--texto-fraco)";
+    const estadoDiplomatico = emGuerra
+      ? '<b style="color:var(--vermelho)">EM GUERRA</b>'
+      : pacto === "alianca" ? '<b style="color:var(--verde)">ALIANÇA</b>'
+      : pacto === "naoAgressao" ? '<b style="color:var(--latao-claro)">PACTO</b>' : "paz";
+
+    const ajudaDisponivel = Math.floor(dinheiro * 0.2);
     html += `<div class="nacaoDiplo">
       <span class="amostra" style="background:${outra.cor}"></span>
       <div class="ident">
         <strong>${escaparHtml(outra.nome)}</strong>
-        <small>${outra.provincias} prov. · força ${numero(outra.forca)} · ${emGuerra ? "EM GUERRA" : "paz"}${alcancavel ? "" : " · sem rota"}</small>
+        <small>${outra.provincias} prov. · força ${numero(outra.forca)} · ${estadoDiplomatico}</small>
+        <small style="color:${corDasRelacoes}">relações ${relacoes > 0 ? "+" : ""}${Math.round(relacoes)} · moral ${outra.moral}${alcancavel ? "" : " · sem rota"}</small>
       </div>
       <div class="acoes">
         ${emGuerra
           ? `<button class="acao secundaria pequena" data-paz="${outra.id}">Propor paz</button>`
-          : `<button class="acao perigo pequena" data-guerra="${outra.id}" ${podeDeclarar ? "" : "disabled"}
+          : `<button class="acao perigo pequena" data-guerra="${outra.id}" ${dinheiro >= custo ? "" : "disabled"}
                title="${alcancavel ? "Declarar guerra custa " + custo + " de dinheiro" : "Sem fronteira nem rota marítima: esta guerra não teria frente"}">Guerra · ${custo}</button>`}
+        ${pacto === null && !emGuerra
+          ? `<button class="acao secundaria pequena" data-pacto="${outra.id}" ${dinheiro >= 30 ? "" : "disabled"}
+               title="Pacto de não-agressão por 90 dias. Custa 30 de dinheiro e depende das relações.">Pacto</button>
+             <button class="acao secundaria pequena" data-alianca="${outra.id}" ${dinheiro >= 60 ? "" : "disabled"}
+               title="Aliança por 180 dias: acesso militar e chamado às armas. Exige boa relação.">Aliança</button>`
+          : ""}
+        ${pacto !== null
+          ? `<button class="acao secundaria pequena" data-romper="${outra.id}"
+               title="Romper o pacto custa moral e queima sua reputação com todos.">Romper</button>`
+          : ""}
+        ${!emGuerra && ajudaDisponivel >= 20
+          ? `<button class="acao secundaria pequena" data-ajuda="${outra.id}"
+               title="Enviar ${ajudaDisponivel} de dinheiro melhora as relações.">Ajuda ${ajudaDisponivel}$</button>`
+          : ""}
       </div>
     </div>`;
   }
   html += `</div>`;
+
+  if (minha.eliminada) {
+    html += `<div class="bloco aviso"><p class="vazio">
+      <strong>${escaparHtml(minha.nome)} foi eliminada da campanha.</strong><br>
+      Você continua na sala como observador: o mapa, os comunicados e as
+      batalhas seguem à vista.</p></div>`;
+  }
+
+  // ── Governo: o humor do povo e o que o governo faz com ele ──
+  const moral = estado.moral ?? 0;
+  const corDoMoral = moral >= 60 ? "var(--verde)" : moral >= 35 ? "var(--latao)" : "var(--vermelho)";
+  const adotadas = estado.doutrinas ?? [];
+  const limite = estado.regras.limiteDeDoutrinas ?? 3;
+  html += `<div class="bloco"><h3>Governo</h3>
+    <div class="moral">
+      <div class="moralTopo"><span>Moral do povo</span>
+        <strong style="color:${corDoMoral}">${Math.round(moral)}<small>/100</small></strong></div>
+      <div class="barraMoral"><i style="width:${Math.max(0, Math.min(100, moral))}%;background:${corDoMoral}"></i></div>
+      <small>${moral >= 60 ? "O povo acredita na guerra: produção e combate rendem mais."
+        : moral >= 35 ? "Cansaço à vista. Uma guerra longa vai cobrar o preço."
+        : "Risco de colapso: as tropas desertam em dobro e a produção cai."}</small>
+    </div>
+    <p class="subtitulo">Doutrinas em vigor (${adotadas.length}/${limite})</p>
+    <div class="listaDeCartoes">
+      ${(estado.regras.doutrinas ?? []).map((doutrina) => {
+        const ativa = adotadas.includes(doutrina.id);
+        const dinheiro = minha.estoques?.dinheiro ?? 0;
+        const bloqueada = !ativa && (dinheiro < doutrina.custo || adotadas.length >= limite);
+        const sinal = doutrina.moralPorDia >= 0 ? "+" : "";
+        return `<button class="cartao ${ativa ? "ativo" : ""}" data-doutrina="${doutrina.id}"
+          ${bloqueada ? "disabled" : ""}
+          title="${escaparHtml(doutrina.descricao)} — moral ${sinal}${doutrina.moralPorDia}/dia">
+          <strong>${escaparHtml(doutrina.nome)}</strong>
+          <small>${escaparHtml(doutrina.descricao)}</small>
+          <span class="preco">${ativa ? "em vigor — clique para revogar"
+            : `${doutrina.custo} $ · moral ${sinal}${doutrina.moralPorDia}/dia`}</span>
+        </button>`;
+      }).join("")}
+    </div>
+  </div>`;
+
+  // ── Pesquisa: o catálogo vem inteiro do servidor, com o preço já resolvido ──
+  const pesquisa = estado.pesquisa;
+  if (pesquisa !== null && pesquisa !== undefined) {
+    html += `<div class="bloco"><h3>Pesquisa</h3>
+      <div class="pesquisaTopo">
+        <strong>${numeroCheio(pesquisa.pontos)}</strong>
+        <span>pontos acumulados<br><b>+${pesquisa.porDia} por dia</b></span>
+      </div>
+      ${Object.entries(estado.regras.ramosDePesquisa ?? {}).map(([ramo, nomeDoRamo]) => {
+        const avancos = pesquisa.avancos.filter((avanco) => avanco.ramo === ramo);
+        if (avancos.length === 0) return "";
+        return `<div class="ramo"><h4>${escaparHtml(nomeDoRamo)}</h4>
+          ${avancos.map((avanco) => `
+            <button class="cartaoAvancado ${avanco.concluido ? "concluido" : ""}"
+              data-pesquisar="${avanco.id}" ${avanco.podePesquisar ? "" : "disabled"}
+              title="${escaparHtml(avanco.descricao)}">
+              <strong>${escaparHtml(avanco.nome)}</strong>
+              <small>${escaparHtml(avanco.descricao)}</small>
+              <span class="preco">${avanco.concluido ? "concluído"
+                : !avanco.prerequisitosOk ? `requer ${escaparHtml(avanco.prerequisitosFaltando.join(", "))}`
+                : avanco.faltam > 0 ? `faltam ${avanco.faltam} pontos`
+                : `${avanco.custo} pontos`}</span>
+            </button>`).join("")}
+        </div>`;
+      }).join("")}
+    </div>`;
+  }
+
+  // ── Comandantes: quem mais está nesta campanha ──
+  const comandantes = estado.comandantes ?? [];
+  if (comandantes.length > 0) {
+    html += `<div class="bloco"><h3>Comandantes (${comandantes.length})</h3>
+      ${comandantes.map((comandante) => {
+        const nacao = estado.nacoes.find((n) => n.id === comandante.nacaoId);
+        return `<div class="comandante">
+          <span class="pontoDeEstado ${comandante.conectado ? "ligado" : ""}"
+            title="${comandante.conectado ? "Online" : "Offline"}"></span>
+          <span class="amostra" style="background:${nacao?.cor ?? "#666"}"></span>
+          <div class="ident">
+            <strong>${escaparHtml(comandante.nome)}${comandante.ehVoce ? " — você" : ""}</strong>
+            <small>${escaparHtml(nacao?.nome ?? "—")}${nacao?.eliminada ? " · eliminada" : ""}</small>
+          </div>
+        </div>`;
+      }).join("")}
+    </div>`;
+  }
 
   html += `<div class="bloco"><h3>Suas províncias (${minhasProvincias.length})</h3>
     <div style="display:flex;flex-wrap:wrap;gap:4px">${minhasProvincias.map((p) => `
@@ -1496,8 +1621,38 @@ function pintarPainelDeGuerra() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 document.addEventListener("click", (evento) => {
-  const alvo = evento.target.closest("[data-acao],[data-construir],[data-recrutar-acao],[data-cancelar],[data-guerra],[data-paz],[data-ir-para],[data-passo-tipo],[data-recrutar-passo],[data-nacao]");
+  const alvo = evento.target.closest("[data-acao],[data-construir],[data-recrutar-acao],[data-cancelar],[data-guerra],[data-paz],[data-ir-para],[data-passo-tipo],[data-recrutar-passo],[data-nacao],[data-pesquisar],[data-doutrina],[data-pacto],[data-alianca],[data-romper],[data-ajuda]");
   if (alvo === null || estado === null) return;
+
+  // Comandos das telas de governo, pesquisa e diplomacia
+  if (alvo.dataset.pesquisar !== undefined) {
+    enviarComando({ tipo: "pesquisar", avancoId: alvo.dataset.pesquisar });
+    return;
+  }
+  if (alvo.dataset.doutrina !== undefined) {
+    const ativa = (estado.doutrinas ?? []).includes(alvo.dataset.doutrina);
+    enviarComando(ativa
+      ? { tipo: "revogarDoutrina", doutrinaId: alvo.dataset.doutrina }
+      : { tipo: "adotarDoutrina", doutrinaId: alvo.dataset.doutrina });
+    return;
+  }
+  if (alvo.dataset.pacto !== undefined) {
+    enviarComando({ tipo: "proporPacto", nacaoId: alvo.dataset.pacto, tipoDePacto: "naoAgressao" });
+    return;
+  }
+  if (alvo.dataset.alianca !== undefined) {
+    enviarComando({ tipo: "proporPacto", nacaoId: alvo.dataset.alianca, tipoDePacto: "alianca" });
+    return;
+  }
+  if (alvo.dataset.romper !== undefined) {
+    enviarComando({ tipo: "romperPacto", nacaoId: alvo.dataset.romper });
+    return;
+  }
+  if (alvo.dataset.ajuda !== undefined) {
+    const enviado = Math.floor((minhaNacao()?.estoques?.dinheiro ?? 0) * 0.2);
+    enviarComando({ tipo: "enviarAjuda", nacaoId: alvo.dataset.ajuda, recurso: "dinheiro", quantidade: enviado });
+    return;
+  }
 
   const provincia = provinciaSelecionada === null ? null : porId.get(provinciaSelecionada);
 
@@ -1654,10 +1809,12 @@ function mostrarManual() {
   abrirModal(`
     <h2>Como <span>jogar</span></h2>
     <p class="chamada">
-      Supremacia 1942 é uma campanha de 360 dias. Você comanda uma nação numa
-      Europa dividida; as outras onze são conduzidas pelo estado-maior adversário.
-      Vence quem alcançar <strong>${Math.round((regras.dominioParaVitoria ?? 0.4) * 100)}% do mapa</strong>
-      antes do armistício — ou quem tiver mais território quando o prazo acabar.
+      Supremacia 1942 é uma campanha de ${regras.limiteDeDias} dias. Você comanda uma nação
+      numa Europa dividida; as outras são conduzidas pelo estado-maior adversário.
+      Existem três finais: <strong>aniquilação</strong> (ficar sozinho no mapa),
+      <strong>supremacia</strong> (passar de ${Math.round((regras.dominioParaVitoria ?? 0.4) * 100)}% das províncias a partir
+      do dia ${regras.diaMinimoParaVitoria}) e <strong>armistício</strong> — quando o prazo acaba e quem
+      tem mais território leva a campanha.
     </p>
 
     <div class="manual">
@@ -1738,6 +1895,53 @@ function mostrarManual() {
         </ul>
       </div>
 
+      <div class="manualSecao">
+        <h3>Governo e pesquisa</h3>
+        <p>Na aba <strong>Nação</strong> você governa: moral do povo, doutrinas e a árvore de pesquisa.
+        O servidor manda o preço de cada avanço e diz o que já está ao seu alcance — o cliente não
+        calcula nada.</p>
+        <ul>
+          <li><strong>Moral</strong>: começa em ${regras.moralInicial}. Cai a cada dia de guerra (mais rápido com
+            várias frentes), ao perder províncias e ao perder a capital; sobe com conquistas, com
+            propaganda e com o tempo de paz. Moral baixa reduz produção e combate até a nação parar de cooperar.</li>
+          <li><strong>Doutrinas</strong>: no máximo ${regras.limiteDeDoutrinas} ao mesmo tempo. Cada uma custa dinheiro, dá um
+            efeito permanente e mexe no moral todo dia — racionamento, propaganda, serviço civil, censura,
+            economia de guerra, recrutamento geral, paz social, turnos extras.</li>
+          <li><strong>Pesquisa</strong>: pontos por dia vindos de <strong>laboratórios</strong> e do esforço de guerra.
+            São ${regras.avancos.length} avanços em ${Object.keys(regras.ramosDePesquisa ?? {}).length} ramos, com dependências entre eles.</li>
+          <li><strong>Indústria</strong>: cada nação tira um tanto diferente de cada província. A Alemanha
+            produz ${Math.round(((regras.eficienciaNacional?.de ?? 1) - 1) * 100)}% acima do normal por província e a União Soviética
+            ${Math.round(((regras.eficienciaNacional?.ur ?? 1) - 1) * 100)}%: território enorme, fábrica atrasada. Leve isso em conta ao escolher.</li>
+        </ul>
+      </div>
+
+      <div class="manualSecao">
+        <h3>Diplomacia</h3>
+        <ul>
+          <li><strong>Relações</strong> vão de −100 a +100 e aparecem no painel. Guerra e invasão derrubam;
+            inimigo comum e tempo de paz aproximam.</li>
+          <li><strong>Pacto de não-agressão</strong> (90 dias, 30 de dinheiro): ninguém ataca o outro enquanto valer.</li>
+          <li><strong>Aliança</strong> (180 dias, 60 de dinheiro, exige boa relação): vale <em>acesso militar</em> —
+            suas tropas atravessam o território aliado, mas ainda não podem ocupá-lo. Se um aliado é
+            atacado, ele chama você às armas.</li>
+          <li><strong>Ajuda econômica</strong>: enviar dinheiro melhora as relações e pode salvar uma amizade.</li>
+          <li><strong>Rompimento</strong>: quebrar a palavra custa −35 de relação com o traído, −8 com todos os
+            outros e −6 de moral interna. Quem cresce demais perde simpatia sozinho: a partir de
+            ${Math.round((regras.dominioQueAssista ?? 0.24) * 100)}% do mapa o resto do mundo vai se
+            aproximando: quanto mais perto de ${Math.round((regras.dominioParaVitoria ?? 0.4) * 100)}% você chegar,
+            mais fundo esse rancor fica — e ele alivia se você recuar.</li>
+        </ul>
+      </div>
+
+      <div class="manualSecao">
+        <h3>Comandantes</h3>
+        <p>Esta campanha aceita mais de um jogador. Cada pessoa abre o mesmo endereço no próprio
+        navegador, escolhe o seu nome e uma nação ainda livre — a nação escolhida por alguém não pode
+        ser pega por outra pessoa. Se a conexão cair ou a página recarregar, o comando continua seu
+        por cinco minutos. Todo o estado do jogo vive no servidor: os dois navegadores mandam ordens
+        e recebem o mesmo retrato do mundo.</p>
+      </div>
+
       <div style="text-align:center">
         <button class="acao" data-acao="fechar-modal">Entendido, ao combate</button>
       </div>
@@ -1746,40 +1950,75 @@ function mostrarManual() {
 }
 
 function mostrarEscolhaDeNacao() {
-  const nacoes = estado === null
-    ? []
-    : [...estado.nacoes].sort((a, b) => b.provincias - a.provincias);
-  abrirModal(`
-    <h2>Assuma o comando de uma <span>nação</span></h2>
-    <p class="chamada">
-      Dezembro de 1942. Doze potências dividem a Europa e o Mediterrâneo —
-      e as outras onze serão controladas pelo estado-maior adversário.
-      Escolha por onde começar: as grandes potências têm mais fábricas, mas
-      fronteiras longas. As pequenas são difíceis de defender, porém crescem
-      rápido quando conquistam.
-    </p>
-    <div class="gradeDeNacoes">${nacoes.map((nacao) => {
-      const minhas = estado.provincias.filter((p) => p.dono === nacao.id);
-      const porMar = new Set();
-      for (const provincia of minhas) {
-        for (const id of provincia.vizinhosMaritimos ?? []) {
-          const outra = porId.get(id);
-          if (outra !== undefined && outra.dono !== nacao.id) porMar.add(outra.dono);
-        }
+  if (estado === null) return;
+  const nacoes = [...estado.nacoes].sort((a, b) => b.provincias - a.provincias);
+  const porId = new Map(estado.provincias.map((p) => [p.id, p]));
+  const tomadas = new Map();
+  for (const comandante of estado.comandantes ?? []) tomadas.set(comandante.nacaoId, comandante);
+  const minhaAtual = minhaNacao();
+
+  // Quantas nações cada uma alcança: ajuda a escolher sem precisar de tutorial
+  const descricaoDeAlcance = (nacao) => {
+    const minhas = estado.provincias.filter((p) => p.dono === nacao.id);
+    const porMar = new Set();
+    for (const provincia of minhas) {
+      for (const id of provincia.vizinhosMaritimos ?? []) {
+        const outra = porId.get(id);
+        if (outra !== undefined && outra.dono !== nacao.id) porMar.add(outra.dono);
       }
-      const temFronteira = minhas.some((p) => p.vizinhos.some((id) => porId.get(id)?.dono !== nacao.id));
-      const estilo = temFronteira
-        ? (porMar.size > 0 ? "Fronteira terrestre e rotas marítimas" : "Só fronteira terrestre")
-        : (porMar.size > 0 ? "Potência insular: só se chega pelo mar" : "Sem contato com outras nações");
+    }
+    const temFronteira = minhas.some((p) => p.vizinhos.some((id) => porId.get(id)?.dono !== nacao.id));
+    if (temFronteira) return porMar.size > 0 ? "Fronteira terrestre e rotas marítimas" : "Só fronteira terrestre";
+    return porMar.size > 0 ? "Potência insular: só se chega pelo mar" : "Sem contato com outras nações";
+  };
+
+  abrirModal(`
+    <h2>Assuma o <span>comando</span></h2>
+    <p class="chamada">
+      Doze nações, 216 províncias e 360 dias. Cada comandante tem a sua nação:
+      uma vez escolhida, ela não fica disponível para outra pessoa.
+    </p>
+
+    <div class="linhaDeNome">
+      <label for="nomeDeGuerra">Seu nome de comandante</label>
+      <input id="nomeDeGuerra" maxlength="24" placeholder="Comandante"
+        value="${escaparHtml(localStorage.getItem("supremacia1942:nome") ?? "")}">
+      <small>${(estado.comandantes ?? []).length === 0
+        ? "Você é o primeiro nesta campanha."
+        : `Nesta campanha: ${(estado.comandantes ?? []).map((c) => `${escaparHtml(c.nome)} (${escaparHtml(estado.nacoes.find((n) => n.id === c.nacaoId)?.nome ?? "?")}${c.conectado ? "" : ", offline"})`).join(" · ")}`}</small>
+    </div>
+
+    <div class="gradeDeNacoes">${nacoes.map((nacao) => {
+      const tomada = tomadas.get(nacao.id);
+      const bloqueada = tomada !== undefined && tomada.nacaoId !== minhaAtual;
+      const eficiencia = estado.regras?.eficienciaNacional?.[nacao.id];
+      const etiqueta = tomada !== undefined
+        ? `<em class="ocupada">${escaparHtml(tomada.nome)}${tomada.conectado ? "" : " (offline)"}</em>`
+        : nacao.provincias >= 20 ? "<em>Potência continental</em>"
+        : nacao.provincias >= 10 ? "<em>Média potência</em>" : "<em>Desafio avançado</em>";
       return `
-      <button class="opcaoDeNacao" data-nacao="${nacao.id}">
+      <button class="opcaoDeNacao${bloqueada ? " tomada" : ""}" data-nacao="${nacao.id}" ${bloqueada ? "disabled" : ""}>
         <span class="amostra" style="background:${nacao.cor}"></span>
         <strong>${escaparHtml(nacao.nome)}</strong>
-        <small>${nacao.provincias} províncias · força ${numero(nacao.forca)}<br>capital: ${escaparHtml(nacao.capital ?? "—")}<br>${escaparHtml(estilo)}</small>
-        ${nacao.provincias >= 20 ? "<em>Potência continental</em>" : nacao.provincias >= 10 ? "<em>Média potência</em>" : "<em>Desafio avançado</em>"}
+        <small>${nacao.provincias} províncias · força ${numero(nacao.forca)}<br>capital: ${escaparHtml(nacao.capital ?? "—")}<br>${escaparHtml(descricaoDeAlcance(nacao))}${eficiencia === undefined ? "" : `<br>indústria ${eficiencia >= 1 ? "+" : ""}${Math.round((eficiencia - 1) * 100)}% por província`}</small>
+        ${etiqueta}
       </button>`;
     }).join("")}</div>
+
+    <p class="notaDaSala">
+      Para jogar com outra pessoa, abra este mesmo endereço em outro navegador ou
+      em outra máquina: cada um escolhe uma nação e a campanha é a mesma. Se você
+      recarregar a página, volta para o seu comando.
+    </p>
   `);
+
+  const campoDoNome = $("nomeDeGuerra");
+  if (campoDoNome !== null) {
+    campoDoNome.addEventListener("input", () => {
+      localStorage.setItem("supremacia1942:nome", campoDoNome.value.trim());
+      enviar({ tipo: "entrar", jogadorId, nome: campoDoNome.value.trim() });
+    });
+  }
 }
 
 function mostrarFimDeJogo(nacaoVencedora) {
@@ -1788,16 +2027,31 @@ function mostrarFimDeJogo(nacaoVencedora) {
   const venceu = nacaoVencedora === estado?.minhaNacao;
   const vencedora = estado?.nacoes.find((n) => n.id === nacaoVencedora);
   const minha = minhaNacao();
+
+  // O motivo decide o texto: conquista total, supremacia no mapa ou a
+  // vantagem no placar quando o prazo da campanha se esgota.
+  const motivo = estado?.motivoDaVitoria;
+  const comoTerminou = motivo === "aniquilacao"
+    ? `A ${escaparHtml(vencedora?.nome ?? "última potência")} ficou sozinha no mapa: todas as outras nações foram eliminadas.`
+    : motivo === "supremacia"
+      ? `A ${escaparHtml(vencedora?.nome ?? "sua nação")} passou da fatia do mapa que garante a supremacia no dia ${estado?.dia}.`
+      : `O prazo da campanha terminou no dia ${estado?.dia} e a ${escaparHtml(vencedora?.nome ?? "maior potência")} estava na frente.`;
+  const placar = [...(estado?.nacoes ?? [])]
+    .sort((a, b) => b.provincias - a.provincias)
+    .slice(0, 4)
+    .map((n) => `<div class="linhaDoPlacar">
+      <span class="amostra" style="background:${n.cor}"></span>
+      <strong>${escaparHtml(n.nome)}</strong>
+      <span>${n.provincias} províncias · força ${numero(n.forca)}</span>
+    </div>`).join("");
   abrirModal(`
     <div class="bandeiraFinal">
       <div class="${venceu ? "vitoria" : "derrota"}">
         <span class="amostra" style="background:${vencedora?.cor ?? "#666"}"></span>
         <div class="tituloFinal">${venceu ? "Vitória" : "Fim da campanha"}</div>
         <p class="chamada" style="margin-bottom:0">
-          ${venceu
-            ? `A ${escaparHtml(vencedora?.nome ?? "sua nação")} controla metade do continente. O conflito terminou no dia ${estado?.dia}.`
-            : `${escaparHtml(vencedora?.nome ?? "Uma potência")} alcançou a supremacia no dia ${estado?.dia}.
-               ${minha !== null ? `A ${escaparHtml(minha.nome)} terminou com ${minha.provincias} províncias.` : ""}`}
+          ${comoTerminou}
+          ${minha !== null && !venceu ? ` A ${escaparHtml(minha.nome)} terminou com ${minha.provincias} províncias.` : ""}
         </p>
       </div>
     </div>
@@ -1805,15 +2059,21 @@ function mostrarFimDeJogo(nacaoVencedora) {
       <span>Dias de campanha</span><b>${estado?.dia}</b>
       <span>Províncias em disputa</span><b>${estado?.totalDeProvincias}</b>
       <span>Nações ainda de pé</span><b>${estado?.nacoes.filter((n) => !n.eliminada).length}</b>
+      <span>Comandantes humanos</span><b>${(estado?.comandantes ?? []).length}</b>
     </div>
-    <div style="text-align:center;margin-top:26px">
-      <button class="acao" data-acao="recarregar">Nova campanha</button>
+    <div class="placarFinal"><h4>Como terminou</h4>${placar}</div>
+    <div style="text-align:center;margin-top:22px">
+      <button class="acao" data-nova-campanha>Nova campanha</button>
     </div>
   `);
 }
 
 document.addEventListener("click", (evento) => {
   if (evento.target.dataset?.acao === "recarregar") location.reload();
+  if (evento.target.closest("[data-nova-campanha]") !== null) {
+    fecharModal();
+    enviar({ tipo: "novaCampanha" });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1863,7 +2123,14 @@ function aoAtualizarEstado() {
     fecharModal();
   }
 
+  if (estado.vencedor === null) fimDeJogoMostrado = false;
   if (estado.vencedor !== null && !fimDeJogoMostrado) mostrarFimDeJogo(estado.vencedor);
+
+  // Campanha nova: ninguém tem nação até escolher outra vez
+  if (precisaEscolher && estado.minhaNacao === null && document.querySelector(".opcaoDeNacao") === null) {
+    precisaEscolher = false;
+    mostrarEscolhaDeNacao();
+  }
 }
 
 /**

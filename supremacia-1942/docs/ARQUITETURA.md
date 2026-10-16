@@ -229,13 +229,35 @@ o custo do quartel e a ocupação dos espaços estavam escritos à mão no clien
 divergiram do motor. A correção foi estrutural: o servidor passou a mandar o
 catálogo, e o cliente passou a só pintar.
 
+**5. A campanha acabava antes de o jogador jogar.** A União Soviética começa com
+45 das 214 províncias — um quinto do mapa. As outras nações ainda estavam
+montando a primeira fábrica quando o teste de supremacia disparava: em cinco de
+seis sementes a partida terminava entre os dias 73 e 166, sempre com a URSS em
+mais de 40%. Vários ajustes foram tentados no lugar errado (limiar de domínio,
+agressividade da IA, teto de ataques por turno) sem resolver o fundo do problema,
+que era econômico: um quinto do mapa valendo o mesmo por província que as
+metrópoles alemãs. A correção final foi **eficiência industrial por nação**
+(`EFICIENCIA_NACIONAL`, exportada por `world.mjs`, multiplicada em
+`calcularProducao`), com a URSS a 0,45 e a Alemanha a 1,18, mais um **piso de 240
+dias** para a vitória por supremacia. O resultado está medido em
+`tools/equilibrio.mjs`: uma semente de seis continua terminando por supremacia no
+dia 240 e as outras cinco vão a armistício no dia 360, o que é uma campanha, não
+um passeio.
+
+**6. A IA construía fazendas em vez de exércitos.** `governarComIA` gastava o
+dinheiro disponível assim que ele aparecia, e chegava ao dia 200 com 82
+províncias, força 1018 e caixa 104. Passou a reservar um caixa de guerra (260 em
+tempo de guerra, 90 em paz) antes de autorizar qualquer obra, e `recrutarComIA`
+passou a preencher o quartel de **todas** as províncias com quartel, não só a
+primeira. Força nacional no dia 200 de uma partida real: 2350.
+
 ---
 
 ## 6. Testes
 
-`npm test` — 61 testes, sem navegador.
+`npm test` — 90 testes, sem navegador.
 
-**Motor (44).** Gerados com `node:test`. Cobrem: determinismo da semente,
+**Motor (63).** Gerados com `node:test`. Cobrem: determinismo da semente,
 contiguidade de todo território, simetria dos vizinhos, toda nação capaz de
 produzir todos os recursos (uma nação sem petróleo fica permanentemente incapaz
 de formar blindados — isso já aconteceu), custos, os dezesseis comandos válidos
@@ -243,12 +265,18 @@ e inválidos, cerco, travessias marítimas, armistício, supremacia e um pacote 
 invariantes depois de 300 dias simulados: nenhum estoque negativo, nenhuma
 província sem dono, nenhuma nação eliminada continuando a controlar território.
 
-**Cliente (17).** O servidor real sobe numa porta de teste, a página real é
+**Cliente (23).** O servidor real sobe numa porta de teste, a página real é
 baixada, e o cliente é executado **de verdade** dentro de um DOM (jsdom) com um
 `WebSocket` de verdade. O teste então verifica que o cliente se conecta, desenha,
 escolhe nação, responde a cliques, troca de aba, abre o manual — e que o clique
 em "pausar" chega ao servidor. Há também um teste que falha se **qualquer** erro
 de JavaScript escapar para o console da página.
+
+**Dois navegadores na mesma partida (4).** Sobem duas conexões WebSocket na mesma
+campanha e conferem o contrato da sala: ninguém assume uma nação já tomada, cada
+jogador vê o outro como comandante no painel, um não move as tropas do outro, e a
+queda de uma conexão não derruba a partida — a nação fica reservada por cinco
+minutos e volta para quem reconectar.
 
 Duas armadilhas do jsdom que custaram tempo e estão resolvidas: ele não executa
 `<script type="module">` (o cliente é buscado por `fetch` e avaliado com `eval`),
@@ -257,17 +285,52 @@ precisam de dublês antes de o cliente rodar).
 
 ---
 
-## 7. Mapa de arquivos
+## 7. Uma campanha, dois navegadores
+
+O multiplayer não precisou de servidor novo: a decisão do item 1 já tinha posto
+todo o estado (e todo o relógio) no processo Node. O que faltava era resolver
+**de quem é cada nação**.
+
+Cada conexão recebe um `jogadorId`; a primeira que pede uma nação livre vira dona
+dela. A tabela de donos é o único lugar onde o servidor acredita em identidade —
+em nenhum momento ele aceita "sou a Alemanha" vindo do cliente. O nome digitado
+fica na sala, a nação escolhida aparece com o comandante ao lado para os outros
+jogadores, e a partida é uma só: os dois navegadores recebem o **mesmo retrato do
+mesmo mundo** a cada 200 ms.
+
+Três detalhes que o desenho exigiu:
+
+- **Reserva de cinco minutos.** Se a conexão cai, o comando não fica órfão nem é
+  entregue na hora para outra pessoa: o nome fica em `ultimaConexao` e volta para
+  quem reconectar com o mesmo `jogadorId` (guardado no `localStorage`) dentro da
+  janela. Passado o prazo, a nação é liberada.
+- **O relógio só anda quando alguém pode agir.** O `tick` roda apenas se existe
+  um jogador humano no comando de alguma nação viva (`alguemNoComando()`).
+  Servidor sem ninguém conectado não consome partida.
+- **Sala, não lobby.** Entrar é escolher nação: a lista marca as tomadas, o
+  painel mostra quem manda em quê, e reiniciar a campanha é um comando explícito
+  que avisa todos os navegadores.
+
+O teste correspondente sobe duas conexões de verdade e verifica as três coisas que
+quebram na prática: roubo de nação, ordem de um jogador mexendo no exército do
+outro, e queda de conexão derrubando a partida.
+
+---
+
+## 8. Mapa de arquivos
 
 ```
 server/world.mjs        geração do mapa, terreno, nações, travessias marítimas
 server/simulation.mjs   regras: economia, exército, combate, cerco, IA, vitória
-server/index.mjs        HTTP + WebSocket + relógio + limite de frequência
+server/index.mjs        HTTP + WebSocket + relógio + salas + limite de frequência
 public/index.html       estrutura da interface
 public/estilo.css       identidade visual (sala de guerra + papel de estado-maior)
 public/jogo.js          desenho do mapa e interação
-tests/motor.test.mjs    44 testes de regras
-tests/cliente.test.mjs  17 testes de integração com navegador simulado
-tools/previa-mapa.mjs   gera uma imagem do mapa sem abrir o navegador
-previas/                imagens geradas por essa ferramenta
+tests/motor.test.mjs        63 testes de regras
+tests/cliente.test.mjs      23 testes de integração com navegador simulado
+tests/multiplayer.test.mjs   4 testes com dois jogadores na mesma campanha
+tools/equilibrio.mjs        simula campanhas inteiras e imprime o resultado
+tools/partida-de-teste.mjs  joga uma partida real por WebSocket, sem navegador
+tools/previa-mapa.mjs       gera uma imagem do mapa sem abrir o navegador
+previas/                    imagens geradas por essa ferramenta
 ```

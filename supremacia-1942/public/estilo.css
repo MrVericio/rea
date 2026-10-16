@@ -623,3 +623,112 @@ button.acao.pequena { padding: 4px 8px; font-size: 9px; }
   #direita { position: absolute; right: 0; top: 58px; bottom: 46px; width: 300px; z-index: 10; box-shadow: -14px 0 32px rgba(0,0,0,.5); }
   .recurso .rotulo { display: none; }
 }
+
+/* ─── Governo, pesquisa e sala de comandantes ─── */
+
+.linhaDeNome { display: grid; gap: 6px; margin-bottom: 18px; }
+.linhaDeNome label {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--latao);
+}
+.linhaDeNome input {
+  padding: 9px 11px; font: inherit; font-size: 14px;
+  color: var(--texto); background: rgba(0,0,0,.35);
+  border: 1px solid var(--borda-clara); border-radius: var(--raio);
+}
+.linhaDeNome input:focus { outline: none; border-color: var(--latao); }
+.linhaDeNome small { font-size: 11px; color: var(--texto-fraco); line-height: 1.5; }
+
+.notaDaSala {
+  margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--borda);
+  font-size: 11.5px; line-height: 1.6; color: var(--texto-fraco);
+}
+
+.opcaoDeNacao.tomada { opacity: .48; cursor: not-allowed; }
+.opcaoDeNacao .ocupada { color: var(--latao-claro); font-style: normal; }
+
+.moral { margin-bottom: 14px; }
+.moralTopo {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--texto-fraco); margin-bottom: 6px;
+}
+.moralTopo strong { font-size: 17px; }
+.moralTopo small { font-size: 10px; color: var(--texto-fraco); }
+.barraMoral {
+  height: 7px; border-radius: 4px; overflow: hidden;
+  background: rgba(0,0,0,.45); border: 1px solid var(--borda);
+}
+.barraMoral i { display: block; height: 100%; transition: width .3s; }
+.moral > small { display: block; margin-top: 6px; font-size: 11px; line-height: 1.5; color: var(--texto-fraco); }
+
+.subtitulo {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--texto-fraco); margin-bottom: 8px;
+}
+
+.listaDeCartoes { display: grid; gap: 7px; }
+.cartao, .cartaoAvancado {
+  display: grid; gap: 3px; text-align: left; padding: 9px 11px;
+  background: rgba(0,0,0,.26); border: 1px solid var(--borda);
+  border-radius: var(--raio); color: var(--texto); cursor: pointer;
+  transition: border-color .13s, background .13s;
+}
+.cartao:hover:not(:disabled), .cartaoAvancado:hover:not(:disabled) {
+  border-color: var(--borda-clara); background: rgba(0,0,0,.4);
+}
+.cartao:disabled, .cartaoAvancado:disabled { opacity: .5; cursor: not-allowed; }
+.cartao strong, .cartaoAvancado strong { font-size: 12.5px; }
+.cartao small, .cartaoAvancado small { font-size: 11px; color: #a9b7c1; line-height: 1.45; }
+.cartao .preco, .cartaoAvancado .preco {
+  font-family: var(--mono); font-size: 10px; color: var(--texto-fraco);
+}
+.cartao.ativo { border-color: var(--latao); background: rgba(201,162,39,.12); }
+.cartao.ativo .preco { color: var(--latao-claro); }
+.cartaoAvancado.concluido { border-color: rgba(94,168,110,.5); }
+.cartaoAvancado.concluido .preco { color: var(--verde); }
+
+.pesquisaTopo {
+  display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px;
+  padding-bottom: 10px; border-bottom: 1px solid var(--borda);
+}
+.pesquisaTopo strong { font-family: var(--mono); font-size: 22px; color: var(--latao-claro); }
+.pesquisaTopo span { font-size: 11px; color: var(--texto-fraco); line-height: 1.4; }
+.pesquisaTopo b { color: var(--verde); }
+
+.ramo { margin-bottom: 12px; }
+.ramo h4 {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--latao); margin-bottom: 6px;
+}
+
+.comandante {
+  display: flex; align-items: center; gap: 8px; padding: 6px 0;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.comandante:last-child { border-bottom: none; }
+.comandante .ident { min-width: 0; }
+.comandante strong { display: block; font-size: 12.5px; }
+.comandante small { font-size: 11px; color: var(--texto-fraco); }
+.pontoDeEstado {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: #5a6670;
+}
+.pontoDeEstado.ligado { background: var(--verde); box-shadow: 0 0 6px rgba(94,168,110,.8); }
+
+.bloco.aviso { border-color: var(--vermelho); background: rgba(160,58,58,.12); }
+
+/* ─── Fim de campanha ─── */
+
+.placarFinal { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--borda); }
+.placarFinal h4 {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--latao); margin-bottom: 10px;
+}
+.linhaDoPlacar {
+  display: flex; align-items: center; gap: 9px; padding: 5px 0;
+  font-size: 12.5px; border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.linhaDoPlacar:last-child { border-bottom: none; }
+.linhaDoPlacar strong { min-width: 110px; }
+.linhaDoPlacar span:last-child { color: var(--texto-fraco); font-size: 11.5px; }

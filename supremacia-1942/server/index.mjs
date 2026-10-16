@@ -39,12 +39,17 @@ const VELOCIDADES = [0, 1, 2, 4];
 // Estado da partida (unico, no servidor)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const estado = criarEstado(Number(process.env.SEMENTE ?? 1942));
+const SEMENTE_BASE = Number(process.env.SEMENTE ?? 1942);
+let numeroDaCampanha = 0;
+let estado = criarEstado(SEMENTE_BASE + numeroDaCampanha);
 let velocidade = 1;
 let acumuladorDeDias = 0;
 let ultimoInstante = Date.now();
 
 const conexoes = new Map(); // jogadorId -> WebSocket
+const nomes = new Map(); // jogadorId -> como o jogador quer ser chamado
+const ultimaConexao = new Map(); // jogadorId -> instante em que esteve online
+const MINUTOS_DE_RESERVA = 5; // quanto tempo a nacao fica guardada para quem caiu
 
 function registrar(estado, texto) {
   estado.eventos.push({ dia: estado.dia, texto, importante: false });
@@ -104,9 +109,23 @@ async function servirArquivo(req, res) {
 }
 
 const servidorHttp = createServer((req, res) => {
-  if (req.url === "/saude") {
+  const caminho = (req.url ?? "/").split("?")[0];
+
+  if (caminho === "/saude") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: true, dia: estado.dia, jogadores: conexoes.size, velocidade }));
+    return;
+  }
+
+  // O retrato da campanha tambem sai por HTTP: e o que o cliente recebe pelo
+  // WebSocket, em JSON puro. Serve para diagnostico, para ferramentas de fora e
+  // para os testes conferirem o que o servidor esta mandando sem depender do
+  // estado interno do navegador.
+  if (caminho === "/api/estado") {
+    const consulta = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
+    const comoJogador = consulta.searchParams.get("jogadorId");
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+    res.end(JSON.stringify(retratoDe(comoJogador)));
     return;
   }
   servirArquivo(req, res).catch(() => {
@@ -129,11 +148,70 @@ function nomeSugerido() {
   return `${nomes[Math.floor(Math.random() * nomes.length)]}-${Math.floor(Math.random() * 900 + 100)}`;
 }
 
+/**
+ * Uma nacao esta tomada se outro jogador a escolheu e ainda tem direito a ela.
+ * Quem cai da conexao mantem a nacao por alguns minutos: perder a partida
+ * porque o wifi oscilou seria cruel.
+ */
+/** O comunicado avisa a todos quem assumiu qual nacao. */
+function registrarEventoDeEntrada(comandante, nomeDaNacao) {
+  const evento = `${comandante} assumiu o comando da ${nomeDaNacao}.`;
+  estado.eventos.push({ dia: estado.dia, texto: evento });
+  if (estado.eventos.length > 200) estado.eventos.shift();
+}
+
 function nacaoEstaTomada(nacaoId, exceto) {
+  const agora = Date.now();
   for (const [outroJogador, nacao] of estado.jogadores) {
-    if (outroJogador !== exceto && nacao === nacaoId && conexoes.has(outroJogador)) return true;
+    if (outroJogador === exceto || nacao !== nacaoId) continue;
+    if (conexoes.has(outroJogador)) return true;
+    const visto = ultimaConexao.get(outroJogador) ?? 0;
+    if (agora - visto < MINUTOS_DE_RESERVA * 60 * 1000) return true;
   }
   return false;
+}
+
+/**
+ * Comeca uma campanha nova, com outro mundo.
+ *
+ * O botao de fim de jogo recarregava a pagina, o que nao adiantava de nada: a
+ * partida ja tinha acabado no servidor. Agora ele pede uma campanha nova de
+ * verdade — mundo novo, todas as nacoes de volta ao mapa e todo mundo
+ * escolhendo de novo, sem reiniciar o servidor.
+ */
+function reiniciarCampanha() {
+  numeroDaCampanha += 1;
+  estado = criarEstado(SEMENTE_BASE + numeroDaCampanha);
+  acumuladorDeDias = 0;
+  velocidade = 1;
+  for (const jogadorId of conexoes.keys()) estado.jogadores.set(jogadorId, null);
+  console.log(`  campanha ${numeroDaCampanha + 1} no ar (semente ${estado.semente})`);
+  return { semente: estado.semente, campanha: numeroDaCampanha + 1 };
+}
+
+/** Quem esta na sala: nome, nacao escolhida e se esta online agora. */
+function listarComandantes(euMesmo) {
+  const lista = [];
+  for (const [jogadorId, nacaoId] of estado.jogadores) {
+    if (nacaoId === null) continue;
+    lista.push({
+      jogadorId,
+      nome: nomes.get(jogadorId) ?? "Comandante",
+      nacaoId,
+      conectado: conexoes.has(jogadorId),
+      ehVoce: jogadorId === euMesmo,
+    });
+  }
+  lista.sort((a, b) => a.nome.localeCompare(b.nome));
+  return lista;
+}
+
+/** O retrato vai para o jogador com o que ele pode saber sobre os outros. */
+function retratoDe(jogadorId) {
+  const retrato = projetarEstado(estado, jogadorId);
+  retrato.comandantes = listarComandantes(jogadorId);
+  retrato.jogadoresConectados = [...conexoes.keys()].length;
+  return retrato;
 }
 
 wss.on("connection", (ws) => {
@@ -159,14 +237,23 @@ wss.on("connection", (ws) => {
         const anterior = conexoes.get(jogadorId);
         if (anterior !== undefined && anterior !== ws) anterior.close(4000, "Outra aba assumiu este comando.");
         conexoes.set(jogadorId, ws);
+        ultimaConexao.set(jogadorId, Date.now());
         if (!estado.jogadores.has(jogadorId)) estado.jogadores.set(jogadorId, null);
+        if (typeof mensagem.nome === "string" && mensagem.nome.trim() !== "") {
+          nomes.set(jogadorId, mensagem.nome.trim().slice(0, 24));
+        } else if (!nomes.has(jogadorId)) {
+          nomes.set(jogadorId, `Comandante ${nomes.size + 1}`);
+        }
         enviar(ws, {
           tipo: "bemVindo",
           jogadorId,
+          nome: nomes.get(jogadorId),
           dia: estado.dia,
           velocidades: VELOCIDADES,
           velocidade,
-          mensagem: "Conexao estabelecida. Escolha sua nacao.",
+          mensagem: estado.jogadores.get(jogadorId) === null
+            ? "Conexao estabelecida. Escolha sua nacao."
+            : "Bem-vindo de volta ao comando.",
         });
         break;
       }
@@ -182,11 +269,26 @@ wss.on("connection", (ws) => {
         }
         const resultado = definirJogador(estado, jogadorId, nacaoId);
         if (resultado.ok === false) return enviar(ws, { tipo: "erro", motivo: resultado.motivo });
+        const comandante = nomes.get(jogadorId) ?? "Comandante";
+        registrarEventoDeEntrada(comandante, estado.nacoes.get(nacaoId).nome);
         enviar(ws, {
           tipo: "nacaoEscolhida",
           nacaoId,
           nome: estado.nacoes.get(nacaoId).nome,
         });
+        break;
+      }
+
+      case "novaCampanha": {
+        if (jogadorId === null) return;
+        const campanha = reiniciarCampanha();
+        for (const cliente of wss.clients) {
+          enviar(cliente, {
+            tipo: "campanhaReiniciada",
+            semente: campanha.semente,
+            campanha: campanha.campanha,
+          });
+        }
         break;
       }
 
@@ -200,7 +302,15 @@ wss.on("connection", (ws) => {
         }
         comandosRecentes.push(agora);
 
-        const resultado = executarComando(estado, jogadorId, mensagem.comando ?? {});
+        // Um comando nunca derruba o servidor. Se o motor estourar, o cliente
+        // recebe a recusa com o motivo e a partida continua para os outros.
+        let resultado;
+        try {
+          resultado = executarComando(estado, jogadorId, mensagem.comando ?? {});
+        } catch (erro) {
+          console.error("comando falhou:", erro);
+          resultado = { ok: false, motivo: "O servidor recusou o comando por erro interno." };
+        }
         enviar(ws, {
           tipo: "resultado",
           ok: resultado.ok,
@@ -243,11 +353,17 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
-    if (jogadorId !== null && conexoes.get(jogadorId) === ws) conexoes.delete(jogadorId);
+    if (jogadorId !== null && conexoes.get(jogadorId) === ws) {
+    conexoes.delete(jogadorId);
+    ultimaConexao.set(jogadorId, Date.now());
+  }
   });
 
   ws.on("error", () => {
-    if (jogadorId !== null && conexoes.get(jogadorId) === ws) conexoes.delete(jogadorId);
+    if (jogadorId !== null && conexoes.get(jogadorId) === ws) {
+    conexoes.delete(jogadorId);
+    ultimaConexao.set(jogadorId, Date.now());
+  }
   });
 });
 
@@ -255,12 +371,26 @@ wss.on("connection", (ws) => {
 // Relogio do jogo
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Ha alguem no comando? O relogio so corre entao.
+ *
+ * Sem isso a campanha anda sozinha: quem clonar o jogo e abrir o navegador no
+ * dia seguinte encontra a partida decidida, sem ter jogado um dia. A partida
+ * comeca quando alguem assume uma nacao.
+ */
+function alguemNoComando() {
+  for (const jogadorId of conexoes.keys()) {
+    if ((estado.jogadores.get(jogadorId) ?? null) !== null) return true;
+  }
+  return false;
+}
+
 setInterval(() => {
   const agora = Date.now();
   const segundosReais = (agora - ultimoInstante) / 1000;
   ultimoInstante = agora;
 
-  if (velocidade > 0 && estado.vencedor === null) {
+  if (velocidade > 0 && estado.vencedor === null && alguemNoComando()) {
     acumuladorDeDias += segundosReais * DIAS_POR_SEGUNDO * velocidade;
     let diasAvancados = 0;
     while (acumuladorDeDias >= 1 && diasAvancados < 4) {
@@ -276,7 +406,7 @@ setInterval(() => {
 
   for (const [jogadorId, ws] of conexoes) {
     if (ws.readyState !== ws.OPEN) continue;
-    enviar(ws, { tipo: "estado", estado: projetarEstado(estado, jogadorId), velocidade });
+    enviar(ws, { tipo: "estado", estado: retratoDe(jogadorId), velocidade });
   }
 }, INTERVALO_DE_ENVIO_MS);
 

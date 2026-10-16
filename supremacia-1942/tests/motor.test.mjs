@@ -18,6 +18,14 @@ import {
   calcularConsumoDeComida,
   custoDeConstrucao,
   bonusDeFortificacao,
+  poderDasUnidades,
+  pontosDePesquisa,
+  bonusNacional,
+  pactoEntre,
+  ehAliado,
+  firmarPacto,
+  LIMITE_DE_DOUTRINAS,
+  AVANCOS,
   provinciasDaNacao,
   estaoEmGuerra,
   CUSTO_DE_GUERRA,
@@ -558,7 +566,7 @@ test("o Reino Unido e a Suécia não ficam presos nas ilhas", () => {
   }
 });
 
-test("atacar pelo mar é possível e concede vantagem ao defensor", () => {
+test("atacar pelo mar exige guerra declarada e vira desembarque", () => {
   const estado = criarEstado(1942);
   definirJogador(estado, "p", "gb");
   const origem = provinciasDe(estado, "gb").find((p) => (p.vizinhosMaritimos ?? []).length > 0);
@@ -568,13 +576,16 @@ test("atacar pelo mar é possível e concede vantagem ao defensor", () => {
   const destino = estado.provincias.get(destinoId);
   destino.unidades = { infantaria: 1 };
 
-  // Sem guerra o movimento é apenas posicionamento
+  // Sem guerra não se entra em casa alheia: nem por terra, nem pelo mar
   assert.equal(estaoEmGuerra(estado, "gb", destino.dono), false);
   origem.unidades = { infantaria: 6, blindado: 4 };
-  const resultado = executarComando(estado, "p", {
+  const semGuerra = executarComando(estado, "p", {
     tipo: "mover", origemId: origem.id, destinoId, unidades: { infantaria: 3, blindado: 2 },
   });
-  assert.equal(resultado.ok, true, `travessia recusada: ${resultado.motivo}`);
+  assert.equal(semGuerra.ok, false, "atravessou o mar sem declarar guerra");
+  assert.match(semGuerra.motivo, /declarar guerra/i);
+  // E o exército continua inteiro na origem: comando recusado não deixa marca
+  assert.deepEqual(origem.unidades, { infantaria: 6, blindado: 4 });
 
   // Com guerra, a travessia vira desembarque e a batalha ganha a marca
   const estado2 = criarEstado(1942);
@@ -788,4 +799,487 @@ test("a recusa por cerco não consome as tropas da origem", () => {
   assert.equal(resultado.ok, false);
   assert.match(resultado.motivo, /cerco/i);
   assert.deepEqual(origem.unidades, antes, "as tropas sumiram mesmo com o comando recusado");
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pesquisa tecnológica
+// ─────────────────────────────────────────────────────────────────────────────
+
+const minhasProvincias = (estado, nacaoId) =>
+  [...estado.provincias.values()].filter((p) => p.dono === nacaoId);
+
+test("laboratório aumenta os pontos de pesquisa por dia", () => {
+  const estado = criarEstado(1942);
+  const antes = pontosDePesquisa(estado, "de");
+  const provincia = minhasProvincias(estado, "de")[0];
+  provincia.construcoes.laboratorio = 2;
+  const depois = pontosDePesquisa(estado, "de");
+  assert.ok(depois > antes, `esperava mais pontos, veio ${antes} -> ${depois}`);
+  assert.ok(Math.abs(depois - (antes + 2 * 0.9)) < 0.01, "cada nível deve valer 0,9 ponto");
+});
+
+test("pesquisa exige pré-requisito e desconta os pontos ao concluir", () => {
+  const estado = criarEstado(1942);
+  definirJogador(estado, "p", "de");
+  const nacao = estado.nacoes.get("de");
+
+  nacao.pesquisa.pontos = 500;
+  const cedo = executarComando(estado, "p", { tipo: "pesquisar", avancoId: "armas_combinadas" });
+  assert.equal(cedo.ok, false, "pesquisou sem ter o pré-requisito");
+  assert.match(cedo.motivo, /Instrucao de Combate/i);
+
+  const primeiro = executarComando(estado, "p", { tipo: "pesquisar", avancoId: "instrucao_de_combate" });
+  assert.equal(primeiro.ok, true, primeiro.motivo);
+  assert.equal(nacao.pesquisa.pontos, 500 - AVANCOS.instrucao_de_combate.custo,
+    "os pontos do avanço devem sair do saldo");
+
+  const repetido = executarComando(estado, "p", { tipo: "pesquisar", avancoId: "instrucao_de_combate" });
+  assert.equal(repetido.ok, false, "pesquisou o mesmo avanço duas vezes");
+
+  const agora = executarComando(estado, "p", { tipo: "pesquisar", avancoId: "armas_combinadas" });
+  assert.equal(agora.ok, true, agora.motivo);
+});
+
+test("a pesquisa realmente muda os números do jogo", () => {
+  const estado = criarEstado(1942);
+  const provincia = minhasProvincias(estado, "de").find((p) => p.terreno === "montanha")
+    ?? minhasProvincias(estado, "de")[0];
+
+  const forcaAntes = poderDasUnidades({ infantaria: 10 }).ataque * bonusNacional(estado, "de").ataque;
+  estado.nacoes.get("de").pesquisa.concluidas.add("instrucao_de_combate");
+  const forcaDepois = poderDasUnidades({ infantaria: 10 }).ataque * bonusNacional(estado, "de").ataque;
+  assert.ok(forcaDepois > forcaAntes, "instrução de combate não aumentou o ataque");
+
+  const acoAntes = calcularProducao(estado, "de").aco;
+  estado.nacoes.get("de").pesquisa.concluidas.add("quimica_aplicada");
+  const acoDepois = calcularProducao(estado, "de").aco;
+  assert.ok(acoDepois > acoAntes, `química aplicada não aumentou o aço em ${provincia.nome}`);
+});
+
+test("guerra de movimento faz as unidades andarem mais longe", () => {
+  const estado = criarEstado(1942);
+  definirJogador(estado, "p", "de");
+  const origem = minhasProvincias(estado, "de")[0];
+  origem.unidades = { infantaria: 4 };
+
+  const retrato = (e) => projetarEstado(e, "p").provincias.find((p) => p.id === origem.id);
+  const alcanceAntes = retrato(estado).alcancePorUnidade.infantaria.length;
+  estado.nacoes.get("de").pesquisa.concluidas.add("guerra_de_movimento");
+  const alcanceDepois = retrato(estado).alcancePorUnidade.infantaria.length;
+  assert.ok(alcanceDepois > alcanceAntes, "a infantaria não ganhou alcance");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Política interna: moral e doutrinas
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("doutrina tem custo, limite de três e efeito imediato", () => {
+  const estado = criarEstado(1942);
+  definirJogador(estado, "p", "de");
+  const nacao = estado.nacoes.get("de");
+  nacao.estoques.dinheiro = 5000;
+
+  const consumoAntes = calcularConsumoDeComida(estado, "de");
+  minhasProvincias(estado, "de")[0].unidades = { infantaria: 20 };
+  const consumoComTropas = calcularConsumoDeComida(estado, "de");
+  assert.ok(consumoComTropas > consumoAntes, "as tropas deveriam consumir comida");
+
+  const adota = executarComando(estado, "p", { tipo: "adotarDoutrina", doutrinaId: "racionamento" });
+  assert.equal(adota.ok, true, adota.motivo);
+  const consumoRacionado = calcularConsumoDeComida(estado, "de");
+  assert.ok(consumoRacionado < consumoComTropas, "racionamento não reduziu o consumo");
+
+  for (const id of ["turnos_extras", "paz_social"]) {
+    assert.equal(executarComando(estado, "p", { tipo: "adotarDoutrina", doutrinaId: id }).ok, true);
+  }
+  const excedente = executarComando(estado, "p", { tipo: "adotarDoutrina", doutrinaId: "censura" });
+  assert.equal(excedente.ok, false, "passou do limite de doutrinas");
+  assert.match(excedente.motivo, /3 doutrinas/i);
+
+  const revoga = executarComando(estado, "p", { tipo: "revogarDoutrina", doutrinaId: "racionamento" });
+  assert.equal(revoga.ok, true, revoga.motivo);
+  assert.equal(nacao.doutrinas.has("racionamento"), false);
+});
+
+test("o moral cai com a guerra e sobe com propaganda", () => {
+  const estado = criarEstado(1942);
+  const nacao = estado.nacoes.get("de");
+  const inicial = nacao.moral;
+  for (let i = 0; i < 20; i += 1) avancarDia(estado);
+  assert.ok(nacao.moral < inicial, `o moral deveria cair em guerra: ${inicial} -> ${nacao.moral}`);
+
+  // Duas campanhas idênticas, uma com propaganda e outra sem: o motor é
+  // determinístico, então qualquer diferença vem da doutrina. Comparar a mesma
+  // nação consigo mesma no tempo não serve — as guerras do dia pesam mais que
+  // a propaganda e o teste viraria sorteio.
+  const comPropaganda = criarEstado(1942);
+  const semPropaganda = criarEstado(1942);
+  comPropaganda.nacoes.get("de").doutrinas.add("propaganda");
+  for (let i = 0; i < 30; i += 1) {
+    if (comPropaganda.vencedor === null) avancarDia(comPropaganda);
+    if (semPropaganda.vencedor === null) avancarDia(semPropaganda);
+  }
+
+  const moralCom = comPropaganda.nacoes.get("de").moral;
+  const moralSem = semPropaganda.nacoes.get("de").moral;
+  assert.ok(moralCom > moralSem,
+    `propaganda não levantou o moral: ${moralSem} sem contra ${moralCom} com`);
+});
+
+test("moral baixo derruba a produção", () => {
+  const estado = criarEstado(1942);
+  const nacao = estado.nacoes.get("de");
+  const comMoralAlto = calcularProducao(estado, "de").dinheiro;
+  nacao.moral = 5;
+  const comMoralBaixo = calcularProducao(estado, "de").dinheiro;
+  assert.ok(comMoralBaixo < comMoralAlto, "o moral não influenciou a produção");
+  assert.ok(comMoralBaixo / comMoralAlto < 0.85, "a queda de produção foi pequena demais");
+});
+
+test("perder a capital é um choque político maior que perder outra província", () => {
+  const estado = criarEstado(1942);
+  const capital = minhasProvincias(estado, "de").find((p) => p.nome === estado.nacoes.get("de").capital);
+  const outra = minhasProvincias(estado, "de").find((p) => p.id !== capital.id);
+  const moralAntes = estado.nacoes.get("de").moral;
+
+  outra.dono = "pl";
+  estado.nacoes.get("de").perdasHoje = 1;
+  avancarDia(estado);
+  const depoisDePerderProvincia = estado.nacoes.get("de").moral;
+
+  // A capital tem de cair pelo caminho normal: conquista em batalha
+  capital.unidades = {};
+  estado.nacoes.get("de").perdasHoje = 1;
+  estado.batalhas.push({
+    id: "b99", provinciaId: capital.id, atacante: "pl", defensor: "de",
+    tropasAtacantes: { infantaria: 5 }, tropasDefensoras: capital.unidades, porMar: false,
+    vidaAtacante: 500, vidaDefensora: 0, dias: 0,
+  });
+  avancarDia(estado);
+  const depoisDePerderCapital = estado.nacoes.get("de").moral;
+  assert.ok(depoisDePerderCapital < depoisDePerderProvincia,
+    `a capital deveria doer mais: ${moralAntes} -> ${depoisDePerderProvincia} -> ${depoisDePerderCapital}`);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Diplomacia
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("pacto bloqueia a declaração de guerra e romper libera o caminho", () => {
+  const estado = criarEstado(1942);
+  definirJogador(estado, "p", "de");
+  const nacao = estado.nacoes.get("de");
+  nacao.estoques.dinheiro = 5000;
+  // Relações altas: a proposta precisa ser aceita para o teste valer
+  nacao.relacoes.set("es", 80);
+  estado.nacoes.get("es").relacoes.set("de", 80);
+
+  const proposta = executarComando(estado, "p", { tipo: "proporPacto", nacaoId: "es" });
+  assert.equal(proposta.ok, true, proposta.motivo);
+  assert.equal(pactoEntre(estado, "de", "es")?.tipo, "naoAgressao", "o pacto não foi firmado");
+
+  const guerra = executarComando(estado, "p", { tipo: "declararGuerra", nacaoId: "es" });
+  assert.equal(guerra.ok, false, "declarou guerra a quem tinha pacto");
+  assert.match(guerra.motivo, /pacto|alianca/i);
+
+  const moralAntes = nacao.moral;
+  const romper = executarComando(estado, "p", { tipo: "romperPacto", nacaoId: "es" });
+  assert.equal(romper.ok, true, romper.motivo);
+  assert.equal(pactoEntre(estado, "de", "es"), null);
+  assert.ok(nacao.moral < moralAntes, "romper a palavra deveria custar moral");
+
+  nacao.estoques.dinheiro = 5000;
+  assert.equal(executarComando(estado, "p", { tipo: "declararGuerra", nacaoId: "es" }).ok, true);
+});
+
+test("aliança convoca o aliado para a guerra", () => {
+  const estado = criarEstado(1942);
+  definirJogador(estado, "p", "de");
+  const italia = estado.nacoes.get("it");
+  const suecia = estado.nacoes.get("su");
+  // Aliança firme, feita fora das regras de aceitação (o alvo do teste é o chamado)
+  firmarPacto(estado, "it", "su", "alianca", 180);
+  assert.equal(ehAliado(estado, "it", "su"), true);
+
+  estado.nacoes.get("de").estoques.dinheiro = 5000;
+  const guerra = executarComando(estado, "p", { tipo: "declararGuerra", nacaoId: "it" });
+  assert.equal(guerra.ok, true, guerra.motivo);
+  assert.ok(suecia.emGuerraCom.has("de"), "a Suécia não honrou a aliança com a Itália");
+  assert.ok(estado.nacoes.get("de").emGuerraCom.has("su"), "a Alemanha não ficou em guerra com a Suécia");
+});
+
+test("aliança dá acesso militar: a marcha atravessa, mas não ocupa", () => {
+  // O mapa é feito de blocos contíguos: nenhuma província encosta em duas
+  // nações estrangeiras ao mesmo tempo. Então o cenário é montado à mão —
+  // três províncias em fila, com o aliado no meio.
+  const estado = criarEstado(1942);
+  const donoDe = (id) => estado.provincias.get(id)?.dono;
+
+  let corrida = null;
+  for (const provincia of estado.provincias.values()) {
+    if (provincia.dono === null || ["de", "pl"].includes(provincia.dono)) continue;
+    if (estaoEmGuerra(estado, "de", provincia.dono)) continue;
+    const doMesmoDono = provincia.vizinhos.filter((id) => donoDe(id) === provincia.dono);
+    if (doMesmoDono.length < 2) continue;
+    const [a, b] = doMesmoDono;
+    if (estado.provincias.get(a).vizinhos.includes(b)) continue; // precisam de estar separadas
+    corrida = { corredor: provincia, aliado: provincia.dono, eu: a, alvo: b };
+    break;
+  }
+  assert.ok(corrida !== null, "não foi possível montar o cenário do corredor");
+
+  // Eu fico com uma província de um lado; do outro fica o alvo
+  const minha = estado.provincias.get(corrida.eu);
+  const alvo = estado.provincias.get(corrida.alvo);
+  minha.dono = "de";
+  alvo.dono = "pl";
+  definirJogador(estado, "p", "de");
+  firmarPacto(estado, "de", corrida.aliado, "alianca", 180);
+  estado.nacoes.get("de").emGuerraCom.add("pl");
+  estado.nacoes.get("pl").emGuerraCom.add("de");
+  minha.unidades = { cacador: 6 };
+
+  // 1. Ocupar território aliado continua proibido
+  const ocupar = executarComando(estado, "p", {
+    tipo: "mover", origemId: minha.id, destinoId: corrida.corredor.id, unidades: { cacador: 2 },
+  });
+  assert.equal(ocupar.ok, false, "ocupou território aliado");
+  assert.match(ocupar.motivo, /aliado/i);
+  assert.deepEqual(minha.unidades, { cacador: 6 }, "comando recusado não pode mexer nas tropas");
+
+  // 2. Atravessar, sim: o alvo está a dois passos, com o aliado no meio
+  const atravessar = executarComando(estado, "p", {
+    tipo: "mover", origemId: minha.id, destinoId: alvo.id, unidades: { cacador: 2 },
+  });
+  assert.equal(atravessar.ok, true, `não conseguiu atravessar o aliado: ${atravessar.motivo}`);
+  assert.equal(estado.batalhas.at(-1).porMar, false, "a rota terrestre pelo aliado virou desembarque");
+
+  // 3. Prova de que o aliado era necessário: sem o pacto, o mesmo movimento falha
+  const romper = executarComando(estado, "p", { tipo: "romperPacto", nacaoId: corrida.aliado });
+  assert.equal(romper.ok, true, romper.motivo);
+  const semAliado = executarComando(estado, "p", {
+    tipo: "mover", origemId: minha.id, destinoId: alvo.id, unidades: { cacador: 2 },
+  });
+  assert.equal(semAliado.ok, false, "chegou ao alvo sem o aliado: o acesso militar não mudou nada");
+  assert.match(semAliado.motivo, /alcance/i);
+});
+
+test("ajuda econômica transfere recursos e melhora relações", () => {
+  const estado = criarEstado(1942);
+  definirJogador(estado, "p", "de");
+  const nacao = estado.nacoes.get("de");
+  const antes = estado.nacoes.get("it").estoques.dinheiro;
+  const relacoesAntes = nacao.relacoes.get("it");
+
+  const ajuda = executarComando(estado, "p", { tipo: "enviarAjuda", nacaoId: "it", recurso: "dinheiro", quantidade: 300 });
+  assert.equal(ajuda.ok, true, ajuda.motivo);
+  assert.equal(estado.nacoes.get("it").estoques.dinheiro, antes + 300);
+  assert.ok(nacao.relacoes.get("it") > relacoesAntes, "a ajuda não melhorou as relações");
+
+  const semEstoque = executarComando(estado, "p", { tipo: "enviarAjuda", nacaoId: "it", recurso: "dinheiro", quantidade: 999999 });
+  assert.equal(semEstoque.ok, false, "enviou dinheiro que não tinha");
+
+  const emGuerra = executarComando(estado, "p", { tipo: "enviarAjuda", nacaoId: "fr", recurso: "dinheiro", quantidade: 10 });
+  assert.equal(emGuerra.ok, false, "mandou ajuda para o inimigo");
+});
+
+test("a inteligência artificial pesquisa e negocia sozinha", () => {
+  const estado = criarEstado(1942);
+  for (let i = 0; i < 200; i += 1) if (estado.vencedor === null) avancarDia(estado);
+
+  // A conta é sobre as nações que sobreviveram: em 200 dias várias já foram
+  // anexadas, e exigir um número fixo de pesquisadores mede o mapa, não a IA.
+  const vivas = [...estado.nacoes.values()].filter((n) => !n.eliminada);
+  assert.ok(vivas.length >= 4, `sobrou pouca coisa viva: ${vivas.length} nações`);
+
+  const pesquisaram = vivas.filter((n) => n.pesquisa.concluidas.size > 0);
+  assert.ok(pesquisaram.length >= Math.ceil(vivas.length * 0.7),
+    `só ${pesquisaram.length} de ${vivas.length} nações vivas pesquisaram algo em 200 dias`);
+
+  const comDoutrina = vivas.filter((n) => n.doutrinas.size > 0);
+  assert.ok(comDoutrina.length >= Math.ceil(vivas.length * 0.5),
+    `só ${comDoutrina.length} de ${vivas.length} nações adotaram doutrina`);
+
+  const comPacto = vivas.filter((n) => n.pactos.size > 0);
+  assert.ok(comPacto.length >= 2, `nenhuma nação da IA assinou pacto em 200 dias`);
+});
+
+test("moral e pesquisa permanecem dentro dos limites em 200 dias", () => {
+  const estado = criarEstado(1942);
+  for (let i = 0; i < 200; i += 1) {
+    avancarDia(estado);
+    for (const nacao of estado.nacoes.values()) {
+      assert.ok(nacao.moral >= 0 && nacao.moral <= 100, `moral fora da faixa: ${nacao.moral}`);
+      assert.ok(nacao.pesquisa.pontos >= 0, `pontos negativos em ${nacao.nome}`);
+      assert.ok(nacao.doutrinas.size <= LIMITE_DE_DOUTRINAS, `${nacao.nome} passou do limite de doutrinas`);
+    }
+    if (estado.vencedor !== null) break;
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A campanha precisa andar
+//
+// Estes dois testes guardam o defeito mais caro que este motor já teve: com a
+// IA abrindo ofensivas de uma ou duas unidades, cada ataque vencia, a província
+// voltava no dia seguinte e o mapa passava 400 dias exatamente igual. Um jogo
+// em que nada acontece parece quebrado, mesmo com todas as regras certas.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Roda a campanha até o fim e devolve o que aconteceu com o mapa. */
+function campanha(semente) {
+  const estado = criarEstado(semente);
+  const donos = new Map([...estado.provincias].map(([id, provincia]) => [id, provincia.dono]));
+  const conquistasPorDia = [];
+  let batalhas = 0;
+
+  while (estado.vencedor === null && estado.dia < 400) {
+    avancarDia(estado);
+    batalhas += estado.batalhas.length;
+    let hoje = 0;
+    for (const [id, dono] of donos) {
+      const agora = estado.provincias.get(id).dono;
+      if (agora === dono) continue;
+      donos.set(id, agora);
+      hoje += 1;
+    }
+    conquistasPorDia.push(hoje);
+    // As faixas são fatias da campanha que realmente aconteceu: uma partida
+    // decidida no dia 240 não tem "último quarto" entre os dias 270 e 360.
+  }
+
+  const ranking = [...estado.nacoes.values()]
+    .map((nacao) => ({ nacao, provincias: provinciasDaNacao(estado, nacao.id).length }))
+    .sort((a, b) => b.provincias - a.provincias);
+
+  // Último quarto da campanha, contado a partir do dia em que ela terminou
+  const quantosDias = conquistasPorDia.length;
+  const inicioDoUltimoQuarto = Math.floor(quantosDias * 0.75);
+  const ultimoQuarto = conquistasPorDia
+    .slice(inicioDoUltimoQuarto)
+    .reduce((soma, n) => soma + n, 0);
+
+  return {
+    estado,
+    lider: ranking[0],
+    eliminadas: ranking.filter((r) => r.nacao.eliminada).length,
+    conquistas: conquistasPorDia.reduce((soma, n) => soma + n, 0),
+    ultimoQuarto,
+    batalhas,
+  };
+}
+
+test("a campanha não congela: o mapa troca de dono do começo ao fim", () => {
+  const partida = campanha(1942);
+  const total = partida.estado.provincias.size;
+
+  assert.ok(partida.conquistas >= 120,
+    `só ${partida.conquistas} províncias mudaram de dono em ${partida.estado.dia} dias`);
+  assert.ok(partida.eliminadas >= 1,
+    `nenhuma nação foi eliminada: a guerra não anda`);
+  assert.ok(partida.lider.provincias / total >= 0.22,
+    `o líder terminou com ${partida.lider.provincias} de ${total} províncias`);
+
+  // A guerra não pode morrer no meio do caminho: o último quarto da campanha
+  // também precisa ter conquistas.
+  assert.ok(partida.ultimoQuarto >= 3,
+    `o último quarto da campanha teve só ${partida.ultimoQuarto} conquistas`);
+
+  // E a campanha precisa durar: uma potência que varre o mapa em sessenta dias
+  // acaba com a partida antes de alguém conseguir jogar.
+  assert.ok(partida.estado.dia >= 120,
+    `a campanha acabou em ${partida.estado.dia} dias`);
+});
+
+test("a travessia marítima é uma rota de guerra usada de verdade", () => {
+  let desembarques = 0;
+  const nacoesQueDesembarcaram = new Set();
+
+  for (const semente of [1943, 1945]) {
+    const estado = criarEstado(semente);
+    while (estado.vencedor === null && estado.dia < 300) {
+      avancarDia(estado);
+      for (const batalha of estado.batalhas) {
+        if (batalha.__contada !== true && batalha.porMar) {
+          batalha.__contada = true;
+          desembarques += 1;
+          nacoesQueDesembarcaram.add(batalha.atacante);
+        } else if (batalha.__contada !== true) {
+          batalha.__contada = true;
+        }
+      }
+    }
+  }
+
+  assert.ok(desembarques >= 20,
+    `só ${desembarques} desembarques em 600 dias de campanha: o mar virou uma parede`);
+  assert.ok(nacoesQueDesembarcaram.size >= 3,
+    `só ${[...nacoesQueDesembarcaram].join(", ")} usaram a rota marítima`);
+});
+
+test("toda campanha termina com um campeão e um motivo", () => {
+  for (const semente of [1942, 1943, 1944]) {
+    const partida = campanha(semente);
+    const { estado } = partida;
+
+    assert.notEqual(estado.vencedor, null, `a campanha ${semente} acabou sem vencedor`);
+    assert.ok(["aniquilacao", "supremacia", "armisticio"].includes(estado.motivoDaVitoria),
+      `motivo desconhecido: ${estado.motivoDaVitoria}`);
+    assert.equal(estado.vencedor, partida.lider.nacao.id,
+      "venceu uma nação que não é a maior do mapa");
+    assert.ok(estado.dia <= LIMITE_DE_DIAS, `a campanha passou do prazo: dia ${estado.dia}`);
+
+    // E o vencedor existe no mapa: nenhuma nação fantasma
+    assert.equal(estado.nacoes.get(estado.vencedor).eliminada, false);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Quem entra na sala sem assumir nação é observador
+//
+// Um espectador derrubava o motor: os comandos de governo iam buscar os
+// estoques de uma "nação" nula e estouravam. Numa partida multiplayer isso é
+// um jogador que ainda está olhando a tela de escolha.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("observador sem nação não derruba o motor", () => {
+  const estado = criarEstado(1942);
+  estado.jogadores.set("espectador", null);
+
+  const comandos = [
+    { tipo: "pesquisar", avancoId: "mobilizacao" },
+    { tipo: "adotarDoutrina", doutrinaId: "propaganda" },
+    { tipo: "revogarDoutrina", doutrinaId: "propaganda" },
+    { tipo: "proporPacto", nacaoId: "es", tipoDePacto: "naoAgressao" },
+    { tipo: "romperPacto", nacaoId: "es" },
+    { tipo: "enviarAjuda", nacaoId: "es", recurso: "dinheiro", quantidade: 10 },
+    { tipo: "declararGuerra", nacaoId: "es" },
+    { tipo: "proporPaz", nacaoId: "es" },
+    { tipo: "construir", provinciaId: "x", construcaoId: "fazenda" },
+    { tipo: "recrutar", provinciaId: "x", unidadeId: "infantaria", quantidade: 1 },
+    { tipo: "mover", origemId: "x", destinoId: "y", unidades: { infantaria: 1 } },
+    { tipo: "cancelarRecrutamento", provinciaId: "x", unidadeId: "infantaria" },
+  ];
+
+  for (const comando of comandos) {
+    let resultado;
+    assert.doesNotThrow(() => {
+      resultado = executarComando(estado, "espectador", comando);
+    }, `o comando ${comando.tipo} estourou`);
+    assert.equal(resultado.ok, false, `o comando ${comando.tipo} passou sem nação`);
+    assert.match(resultado.motivo, /escolheu uma nacao/i);
+  }
+
+  // E o mundo segue exatamente como estava
+  assert.equal(estado.dia, 0);
+  assert.equal(estado.batalhas.length, 0);
+  assert.equal(estado.vencedor, null);
+});
+
+test("jogador desconhecido também é recusado, sem exceção", () => {
+  const estado = criarEstado(1942);
+  const resultado = executarComando(estado, "ninguem", { tipo: "pesquisar", avancoId: "mobilizacao" });
+  assert.equal(resultado.ok, false);
+  assert.match(resultado.motivo, /escolheu uma nacao/i);
 });

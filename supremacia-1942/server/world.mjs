@@ -157,16 +157,16 @@ const NACOES_POR_MASSA = Object.freeze({
  */
 export const NACOES = Object.freeze([
   { id: "gb", nome: "Reino Unido", cor: "#41688c", x: 3.6, y: 4.0, capital: "Londres", jogavel: true },
-  { id: "fr", nome: "Franca", cor: "#585aa6", x: 8.0, y: 14.0, capital: "Paris", jogavel: true },
+  { id: "fr", nome: "França", cor: "#585aa6", x: 8.0, y: 14.0, capital: "Paris", jogavel: true },
   { id: "de", nome: "Alemanha", cor: "#87b847", x: 13.2, y: 10.4, capital: "Berlim", jogavel: true },
-  { id: "it", nome: "Italia", cor: "#4b846e", x: 13.2, y: 19.0, capital: "Roma", jogavel: true },
+  { id: "it", nome: "Itália", cor: "#4b846e", x: 13.2, y: 19.0, capital: "Roma", jogavel: true },
   { id: "es", nome: "Espanha", cor: "#af7c5f", x: 2.6, y: 20.5, capital: "Madrid", jogavel: true },
   { id: "pt", nome: "Portugal", cor: "#3e9f5e", x: 0.4, y: 22.0, capital: "Lisboa", jogavel: true },
-  { id: "su", nome: "Suecia", cor: "#8b47b8", x: 14.5, y: 1.5, capital: "Estocolmo", jogavel: true },
-  { id: "ur", nome: "Uniao Sovietica", cor: "#953a3e", x: 30.0, y: 6.5, capital: "Moscou", jogavel: true },
+  { id: "su", nome: "Suécia", cor: "#8b47b8", x: 14.5, y: 1.5, capital: "Estocolmo", jogavel: true },
+  { id: "ur", nome: "União Soviética", cor: "#953a3e", x: 30.0, y: 6.5, capital: "Moscou", jogavel: true },
   { id: "tr", nome: "Turquia", cor: "#8d4080", x: 26.0, y: 22.0, capital: "Ancara", jogavel: true },
-  { id: "gr", nome: "Grecia", cor: "#61adc0", x: 19.5, y: 21.3, capital: "Atenas", jogavel: true },
-  { id: "pl", nome: "Polonia", cor: "#b4748b", x: 18.5, y: 11.0, capital: "Varsovia", jogavel: true },
+  { id: "gr", nome: "Grécia", cor: "#61adc0", x: 19.5, y: 21.3, capital: "Atenas", jogavel: true },
+  { id: "pl", nome: "Polônia", cor: "#b4748b", x: 18.5, y: 11.0, capital: "Varsóvia", jogavel: true },
   { id: "eg", nome: "Egito", cor: "#818847", x: 22.0, y: 28.5, capital: "Cairo", jogavel: true },
 ]);
 
@@ -175,11 +175,11 @@ export const NACOES = Object.freeze([
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const TERRENOS = Object.freeze({
-  planicie: { id: "planicie", nome: "Planicie", comida: 1.15, aco: 0.9, petroleo: 0.9, carvao: 1.0, dinheiro: 1.0 },
+  planicie: { id: "planicie", nome: "Planície", comida: 1.15, aco: 0.9, petroleo: 0.9, carvao: 1.0, dinheiro: 1.0 },
   floresta: { id: "floresta", nome: "Floresta", comida: 1.0, aco: 1.1, petroleo: 0.7, carvao: 1.25, dinheiro: 0.95 },
   montanha: { id: "montanha", nome: "Montanha", comida: 0.6, aco: 1.45, petroleo: 0.6, carvao: 1.4, dinheiro: 0.85 },
   deserto: { id: "deserto", nome: "Deserto", comida: 0.5, aco: 0.8, petroleo: 1.45, carvao: 0.6, dinheiro: 0.9 },
-  cidade: { id: "cidade", nome: "Metropole", comida: 0.85, aco: 1.0, petroleo: 0.9, carvao: 0.9, dinheiro: 1.6 },
+  cidade: { id: "cidade", nome: "Metrópole", comida: 0.85, aco: 1.0, petroleo: 0.9, carvao: 0.9, dinheiro: 1.6 },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -192,15 +192,15 @@ export const TIPOS_DE_CONSTRUCAO = Object.freeze({
     producaoBase: 4, custo: { dinheiro: 60, aco: 20 }, custoPorNivel: 1.6,
   },
   siderurgica: {
-    id: "siderurgica", nome: "Siderurgica", recurso: "aco", nivelMaximo: 5,
+    id: "siderurgica", nome: "Siderúrgica", recurso: "aco", nivelMaximo: 5,
     producaoBase: 3, custo: { dinheiro: 80, aco: 10 }, custoPorNivel: 1.65,
   },
   pocoPetroleo: {
-    id: "pocoPetroleo", nome: "Poco de Petroleo", recurso: "petroleo", nivelMaximo: 5,
+    id: "pocoPetroleo", nome: "Poço de Petróleo", recurso: "petroleo", nivelMaximo: 5,
     producaoBase: 2, custo: { dinheiro: 100, aco: 35 }, custoPorNivel: 1.7,
   },
   minaCarvao: {
-    id: "minaCarvao", nome: "Mina de Carvao", recurso: "carvao", nivelMaximo: 5,
+    id: "minaCarvao", nome: "Mina de Carvão", recurso: "carvao", nivelMaximo: 5,
     producaoBase: 3, custo: { dinheiro: 70, aco: 25 }, custoPorNivel: 1.6,
   },
   comercio: {
@@ -211,6 +211,12 @@ export const TIPOS_DE_CONSTRUCAO = Object.freeze({
     id: "quartel", nome: "Quartel", recurso: null, nivelMaximo: 3,
     producaoBase: 0, custo: { dinheiro: 120, aco: 60 }, custoPorNivel: 1.8,
     efeito: "Recrutamento mais rapido e maior guarnicao",
+  },
+  laboratorio: {
+    id: "laboratorio", nome: "Laboratório", recurso: null, nivelMaximo: 3,
+    producaoBase: 0, custo: { dinheiro: 140, aco: 70 }, custoPorNivel: 1.85,
+    efeito: "Gera pontos de pesquisa por dia",
+    pesquisaPorNivel: 0.9,
   },
   fortificacao: {
     id: "fortificacao", nome: "Fortificacao", recurso: null, nivelMaximo: 3,
@@ -244,18 +250,43 @@ export const TIPOS_DE_UNIDADE = Object.freeze({
     diasDeRecrutamento: 3, consomeComida: 0.45,
   },
   cacador: {
-    id: "cacador", nome: "Cacador", abrev: "CAC",
+    id: "cacador", nome: "Caçador", abrev: "CAC",
     ataque: 18, defesa: 14, vida: 90, velocidade: 3,
     custo: { dinheiro: 85, aco: 40, petroleo: 40 },
     diasDeRecrutamento: 3, consomeComida: 0.4,
   },
 });
 
+/**
+ * Eficiencia industrial: quanto cada nacao tira de cada provincia.
+ *
+ * Sem isto, a nacao que comeca maior so cresce: a Uniao Sovietica entra na
+ * campanha com 45 das 214 provincias e virava dona do mapa antes do dia 150 em
+ * praticamente toda partida. Dar mais territorio e menos industria por
+ * provincia resolve na raiz e ainda diz alguma coisa sobre 1942: a Uniao
+ * Sovietica tem a maior extensao e a producao mais atrasada; a Alemanha tem
+ * pouco territorio e a melhor fabrica.
+ */
+export const EFICIENCIA_NACIONAL = Object.freeze({
+  de: 1.18,
+  gb: 1.12,
+  fr: 1.02,
+  it: 0.98,
+  su: 1.0,
+  es: 0.94,
+  pt: 0.9,
+  pl: 0.92,
+  tr: 0.88,
+  gr: 0.9,
+  eg: 0.94,
+  ur: 0.45,
+});
+
 export const RECURSOS = Object.freeze(["dinheiro", "comida", "aco", "petroleo", "carvao"]);
 
 export const NOME_DO_RECURSO = Object.freeze({
-  dinheiro: "Dinheiro", comida: "Alimento", aco: "Aco",
-  petroleo: "Petroleo", carvao: "Carvao",
+  dinheiro: "Dinheiro", comida: "Alimento", aco: "Aço",
+  petroleo: "Petróleo", carvao: "Carvão",
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

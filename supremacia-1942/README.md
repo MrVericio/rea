@@ -2,8 +2,10 @@
 
 Jogo de grande estratégia ambientado numa Segunda Guerra ficcional, feito para
 ser jogado **no navegador, sem instalar nada**. Você comanda uma de doze nações
-numa Europa dividida, administra economia e exército, faz guerra (por terra e
-por mar) e tem 360 dias para alcançar a supremacia.
+numa Europa dividida: administra economia, pesquisa, política interna e
+diplomacia, faz guerra por terra e por mar, e tem 360 dias para alcançar a
+supremacia. **Duas pessoas podem jogar a mesma campanha, cada uma no seu
+navegador.**
 
 Tudo aqui é original: o mapa, os nomes, as cores, as unidades, as regras e o
 código. Nada foi copiado de jogo nenhum.
@@ -23,9 +25,15 @@ Abre no navegador e pronto. Não há passo de compilação: o cliente é JavaScr
 puro servido pelo próprio servidor.
 
 ```bash
-npm test           # 61 testes do motor, do servidor e do cliente
+npm test           # 90 testes: motor, cliente e dois navegadores na mesma partida
 npm run dev        # reinicia sozinho a cada alteração
+npm run equilibrio # simula campanhas inteiras e imprime o que aconteceu com o mapa
 ```
+
+Para jogar com outra pessoa, basta abrir o mesmo endereço no navegador dela: quem
+estiver na sua rede usa `http://SEU-IP:3000`. Cada um escolhe o nome e uma nação
+ainda livre — a partida é uma só, e o comando de cada nação pertence a quem
+escolheu primeiro (com cinco minutos de reserva se a conexão cair).
 
 ---
 
@@ -54,13 +62,37 @@ manual dentro do jogo.
   depois na província destacada: verde é marcha, vermelho é ataque, azul é
   travessia marítima.
 
-**O jogo termina sempre.** Alguém vence por supremacia ao controlar 40% do mapa,
-ou no dia 360 há um armistício e vence quem tiver mais território.
+**O jogo termina sempre, de uma de três formas:** aniquilação (ficar sozinho no
+mapa), supremacia (passar de 40% das províncias, a partir do dia 240) ou
+armistício — quando o prazo acaba e vence quem tiver mais território. O piso de
+240 dias existe porque a União Soviética entra na campanha com um quinto do mapa:
+sem ele a partida se decidia antes de qualquer jogador conseguir jogar.
+
+**Governo.** Na aba *Nação* ficam o moral do povo, as doutrinas e a árvore de
+pesquisa. O moral cai a cada dia de guerra e com cada província perdida, e sobe
+com conquistas e propaganda; no chão, a produção e o combate desabam. Cada
+doutrina adotada troca um efeito permanente por um custo diário de moral, e só
+três podem valer ao mesmo tempo.
+
+**Diplomacia.** Relações de −100 a +100 abrem pactos de não-agressão e
+alianças — e aliança é **acesso militar**: suas tropas atravessam o território
+aliado, mas não podem ocupá-lo. Ajuda econômica compra amizade, romper a palavra
+custa moral e reputação, e quem passa de um quarto do mapa vê o mundo inteiro se
+aproximar contra si.
+
+### Eficiência industrial
+
+Cada nação tira um tanto diferente de cada província: a Alemanha rende 18% acima
+do normal por província, a União Soviética 55% abaixo. É o que impede a maior
+nação do mapa de vencer sozinha por volta do dia 150 — território enorme com
+indústria atrasada contra pouco território com a melhor fábrica da Europa. O
+multiplicador de cada país aparece na tela de escolha da nação.
 
 ### O que o jogo não faz
 
-Não existe pagamento, anúncio, conta ou servidor de terceiros. É uma partida
-local: o servidor roda na sua máquina e o mundo é gerado por semente.
+Não existe pagamento, anúncio, conta ou servidor de terceiros. O servidor roda
+na sua máquina e o mundo é gerado por semente — tudo o que acontece numa partida
+é reproduzível a partir dela.
 
 ---
 
@@ -149,19 +181,24 @@ partida honesta.
 
 ## Qualidade: o que os testes cobrem
 
-`npm test` roda 61 testes, sem precisar de navegador.
+`npm test` roda 90 testes, sem precisar de navegador.
 
-**Motor (44 testes)** — geração determinística, territórios contíguos, simetria
+**Motor (63 testes)** — geração determinística, territórios contíguos, simetria
 dos vizinhos, economia (toda nação consegue produzir todos os recursos), custos,
-validação de cada comando, cerco, travessias marítimas, armistício, supremacia,
-e uma bateria de invariantes após 300 dias de simulação: estoques nunca
-negativos, nenhuma província sem dono, ninguém eliminado continuando a controlar
-território.
+validação de cada comando, cerco, travessias marítimas, pesquisa, doutrinas,
+moral, pactos e alianças, os três finais de partida, e uma bateria de invariantes
+depois de centenas de dias de simulação: estoques nunca negativos, nenhuma
+província sem dono, ninguém eliminado continuando a controlar território.
 
-**Cliente (17 testes)** — o servidor real sobe, a página real é carregada num
-DOM (jsdom), o cliente é executado de verdade e o teste verifica que ele se
-conecta, desenha o mapa, escolhe nação, responde a cliques, troca de aba, abre o
-manual e que **um clique em "pausar" chega de fato ao servidor**.
+**Cliente (23 testes)** — o servidor real sobe, a página real é carregada num DOM
+(jsdom), o cliente é executado de verdade e o teste verifica que ele se conecta,
+desenha o mapa, escolhe nação, responde a cliques, troca de aba, abre o manual —
+e que **um clique em "pausar" chega de fato ao servidor**.
+
+**Dois navegadores na mesma partida (4 testes)** — sobem duas conexões WebSocket
+na mesma campanha e conferem que ninguém entra numa nação já tomada, que o
+segundo jogador vê o primeiro como comandante, que um não move as tropas do
+outro e que a queda de um não derruba a partida.
 
 Dois bugs que só apareceram porque o teste carrega a página real:
 
